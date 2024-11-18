@@ -4,15 +4,19 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
+    "docx": "^9.0.3",
     "express": "^4.21.1",
+    "image-size": "^1.1.1",
     "multer": "^1.4.5-lts.1",
+    "nodemon": "^3.1.7",
     "pdfkit": "^0.15.1"
   }
 }
