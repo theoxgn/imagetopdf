@@ -12,9 +12,14 @@ function App() {
     koNumber: '',
     orderDate: '',
     assignment: '',
-    confirmationDate: ''
+    confirmationDate: '',
+    imageRatio: '',
+    smallImageRatio: '' // Tambah state untuk small image ratio
   });
 
+  const [useCustomRatio, setUseCustomRatio] = useState(false);
+  const [useSmallImageRatio, setUseSmallImageRatio] = useState(false);
+  const [hasSmallImages, setHasSmallImages] = useState(false); // Track if there are small images
 
   // Fungsi untuk mengekstrak nomor dan caption dari nama file
   const extractNumberAndCaption = (filename) => {
@@ -28,31 +33,25 @@ function App() {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setOrderData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    setError(''); // Clear errors on input change
+    
+    // Validasi untuk input ratio
+    if (name === 'imageRatio' || name === 'smallImageRatio') {
+      const numValue = value === '' ? '' : parseFloat(value);
+      if (value === '' || (!isNaN(numValue) && numValue > 0)) {
+        setOrderData(prev => ({
+          ...prev,
+          [name]: value
+        }));
+      }
+    } else {
+      setOrderData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
+    setError('');
   };
 
-
-  // const handleFileChange = (e) => {
-  //   try {
-  //     const fileList = Array.from(e.target.files);
-
-  //     const sortedFiles = fileList.sort((a, b) => {
-  //       const numA = parseInt(a.name.split('_')[0]) || 0;
-  //       const numB = parseInt(b.name.split('_')[0]) || 0;
-  //       return numA - numB;
-  //     });
-
-  //     setFiles(sortedFiles);
-  //     setError('');
-  //   } catch (err) {
-  //     setError(err.message);
-  //     e.target.value = ''; // Reset input
-  //   }
-  // };
 
   const handleFileChange = (e) => {
     try {
@@ -63,10 +62,33 @@ function App() {
         return numA - numB;
       });
   
+      // Check for small images
+      const checkSmallImages = async () => {
+        let hasSmall = false;
+        for (const file of sortedFiles) {
+          const img = new Image();
+          const url = URL.createObjectURL(file);
+          
+          await new Promise((resolve) => {
+            img.onload = () => {
+              if (img.width < 360) {
+                hasSmall = true;
+              }
+              URL.revokeObjectURL(url);
+              resolve();
+            };
+            img.src = url;
+          });
+        }
+        setHasSmallImages(hasSmall);
+      };
+
+      checkSmallImages();
+  
       // Add index number to each file
       const numberedFiles = sortedFiles.map((file, index) => {
         const numberedFile = new File([file], file.name, { type: file.type });
-        numberedFile.index = index + 1; // Add 1-based index
+        numberedFile.index = index + 1;
         return numberedFile;
       });
   
@@ -89,11 +111,24 @@ function App() {
         alert('Semua field harus diisi');
         return;
       }
+      // Validasi ratio jika diaktifkan
+      if (useCustomRatio && !orderData.imageRatio) {
+        alert('Masukkan ratio gambar');
+        return;
+      }
+
+      if (useSmallImageRatio && hasSmallImages && !orderData.smallImageRatio) {
+        alert('Masukkan ratio untuk gambar kecil');
+        return;
+      }
 
       setLoading(true);
       const formData = new FormData();
       
+      // Append semua data termasuk ratio
       Object.entries(orderData).forEach(([key, value]) => {
+        if (!useCustomRatio && key === 'imageRatio') return;
+        if (!useSmallImageRatio && key === 'smallImageRatio') return;
         formData.append(key, value);
       });
       
@@ -213,6 +248,91 @@ function App() {
         </div>
       </div>
 
+      {/* Image Ratio Controls */}
+      <div className="mb-6 space-y-4">
+        {/* Normal Image Ratio */}
+        <div className="border-b pb-4">
+          <div className="flex items-center space-x-4 mb-2">
+            <Switch
+              checked={useCustomRatio}
+              onChange={setUseCustomRatio}
+              className={`${
+                useCustomRatio ? 'bg-blue-600' : 'bg-gray-200'
+              } relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none`}
+            >
+              <span
+                className={`${
+                  useCustomRatio ? 'translate-x-6' : 'translate-x-1'
+                } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+              />
+            </Switch>
+            <span className="text-sm font-medium">Rasio Gambar Tertentu</span>
+          </div>
+
+          {useCustomRatio && (
+            <div className="mt-2">
+              <label className="block text-sm font-medium mb-2">Rasio Gambar (lebar:tinggi):</label>
+              <input
+                type="number"
+                name="imageRatio"
+                value={orderData.imageRatio}
+                onChange={handleInputChange}
+                min="0.1"
+                step="0.1"
+                placeholder="Contoh: 1.5 untuk rasio 3:2"
+                className="border rounded-md p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-sm text-gray-500 mt-1">
+                Masukkan angka desimal. Contoh: 1.33 untuk rasio 4:3, 1.78 untuk rasio 16:9
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Small Image Ratio - hanya muncul jika ada gambar kecil */}
+        {hasSmallImages && (
+          <div className="border-t pt-4">
+            <div className="flex items-center space-x-4 mb-2">
+              <Switch
+                checked={useSmallImageRatio}
+                onChange={setUseSmallImageRatio}
+                className={`${
+                  useSmallImageRatio ? 'bg-blue-600' : 'bg-gray-200'
+                } relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none`}
+              >
+                <span
+                  className={`${
+                    useSmallImageRatio ? 'translate-x-6' : 'translate-x-1'
+                  } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
+                />
+              </Switch>
+              <span className="text-sm font-medium">Rasio Khusus untuk Gambar Kecil (&lt;360px)</span>
+            </div>
+
+            {useSmallImageRatio && (
+              <div className="mt-2">
+                <label className="block text-sm font-medium mb-2">
+                  Rasio untuk Gambar Kecil (lebar:tinggi):
+                </label>
+                <input
+                  type="number"
+                  name="smallImageRatio"
+                  value={orderData.smallImageRatio}
+                  onChange={handleInputChange}
+                  min="0.1"
+                  step="0.1"
+                  placeholder="Contoh: 1.5 untuk rasio 3:2"
+                  className="border rounded-md p-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Rasio ini hanya akan diterapkan pada gambar dengan lebar kurang dari 360px
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* File Upload */}
       <div className="mb-6">
         <label className="block text-sm font-medium mb-2">Upload Gambar:</label>
@@ -230,17 +350,6 @@ function App() {
         <div className="mb-6">
           <h2 className="text-lg font-semibold mb-2">Selected Files:</h2>
           <ul className="space-y-2">
-          {/* {files.map((file, index) => {
-              const { number } = extractNumberAndCaption(file.name);
-              return (
-                <li key={index} className="text-sm text-gray-600 bg-gray-50 p-3 rounded-md">
-                  <div className="font-medium text-gray-800">
-                    {number}. {file.name}
-                  </div>
-                </li>
-              );
-            })} */}
-
             {files.map((file, index) => (
               <li key={index} className="text-sm text-gray-600 bg-gray-50 p-3 rounded-md">
                 <div className="font-medium text-gray-800">

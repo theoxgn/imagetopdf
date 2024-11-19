@@ -42,19 +42,39 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage,
-  // limits: {
-  //     fileSize: 10 * 1024 * 1024, // 10MB limit
-  // }
 });
 
+// Tambahkan fungsi untuk mempertahankan simbol
+function preserveSymbols(filename) {
+    // Hapus extension
+    const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
+    
+    // Biarkan semua simbol tetap ada, hanya bersihkan karakter control
+    return nameWithoutExt.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+}
 
 // Helper function to extract number and caption
-function extractNumberAndCaption(filename,index) {
-  return { 
-    number: index + 1,
-    caption: filename
-  };
+function extractNumberAndCaption(filename, index) {
+    try {
+        // Preserves all symbols in the filename
+        const cleanName = preserveSymbols(filename);
+        
+        // Extract caption, preserve all symbols
+        const caption = cleanName;
+        
+        return {
+            number: index + 1,
+            caption: caption
+        };
+    } catch (error) {
+        console.error('Error in extractNumberAndCaption:', error);
+        return {
+            number: index + 1,
+            caption: filename
+        };
+    }
 }
+
 
 
 // Helper function to get image dimensions
@@ -95,15 +115,31 @@ function formatDate(dateString) {
 }
 
 // Tambahkan fungsi untuk menghitung aspek ratio gambar
-function calculateImageDimensions(imageBuffer, maxWidth) {
-  const sizeOf = require('image-size');
-  const dimensions = sizeOf(imageBuffer);
-  const aspectRatio = dimensions.width / dimensions.height;
-  
-  let width = maxWidth;
-  let height = maxWidth / aspectRatio;
-  
-  return { width, height };
+function calculateImageDimensions(imageBuffer, maxWidth, ratio, smallImageRatio) {
+    const sizeOf = require('image-size');
+    const dimensions = sizeOf(imageBuffer);
+    const originalWidth = dimensions.width;
+    
+    // Handling untuk gambar kecil (width < 360px)
+    if (originalWidth < 360 && smallImageRatio) {
+      const scaleFactor = maxWidth / originalWidth; // Faktor scaling untuk menyesuaikan dengan maxWidth
+      const width = originalWidth * scaleFactor;
+      const height = width / smallImageRatio;
+      return { width, height };
+    }
+    
+    // Handling untuk gambar normal dengan ratio custom
+    if (ratio) {
+      const width = maxWidth;
+      const height = width / ratio;
+      return { width, height };
+    }
+    
+    // Default handling menggunakan aspect ratio asli
+    const aspectRatio = dimensions.width / dimensions.height;
+    const width = maxWidth;
+    const height = width / aspectRatio;
+    return { width, height };
 }
 
 // PDF endpoint with proper font handling
@@ -121,8 +157,20 @@ app.post('/convert-pdf', upload.array('images'), async (req, res) => {
       const pageWidth = 595.28;
       const pageHeight = 841.89;
       const margin = 50;
+      const maxImageWidth = pageWidth - (margin * 2);
 
-      const { koNumber, orderDate, assignment, confirmationDate } = req.body;
+      const { 
+        koNumber, 
+        orderDate, 
+        assignment, 
+        confirmationDate, 
+        imageRatio,
+        smallImageRatio 
+      } = req.body;
+
+      const ratio = imageRatio ? parseFloat(imageRatio) : null;
+      const smallRatio = smallImageRatio ? parseFloat(smallImageRatio) : null;
+
       const fileName = `${koNumber} - Lampiran Design ${assignment}`.replace(/[/\\?%*:|"<>]/g, '-');
       outputPath = path.join(__dirname, `${fileName}.pdf`);
       
@@ -174,10 +222,9 @@ app.post('/convert-pdf', upload.array('images'), async (req, res) => {
           tempFiles.push(firstFile.path);
 
           try {
-              // const { number, caption } = extractNumberAndCaption(firstFile.originalname);
               const img = fs.readFileSync(firstFile.path);
 
-              const { number, caption } = extractNumberAndCaption(firstFile.originalname);
+              const { number, caption } = extractNumberAndCaption(firstFile.metadata.originalName,0);
               
               // Add figure number and caption
               doc.moveDown(2)
@@ -219,9 +266,15 @@ app.post('/convert-pdf', upload.array('images'), async (req, res) => {
              });
 
           try {
-              // const { number, caption } = extractNumberAndCaption(file.originalname);
-              const { number, caption } = extractNumberAndCaption(file.originalname, pageIndex);
+              const { number, caption } = extractNumberAndCaption(file.metadata.originalName, pageIndex);
               const img = fs.readFileSync(file.path);
+
+              const { width, height } = calculateImageDimensions(
+                file.path, 
+                maxImageWidth, 
+                ratio,
+                smallRatio
+              );
 
               // Add figure number and caption
               doc.moveDown(2)
@@ -229,8 +282,9 @@ app.post('/convert-pdf', upload.array('images'), async (req, res) => {
                  .text(`${number}.- ${caption}`, margin);
 
               // Image
-              doc.image(img, {
-                  fit: [pageWidth - (margin * 2), pageHeight - doc.y - 100],
+              doc.moveDown(1)
+                .image(img, {
+                  fit: [width, height],
                   align: 'center',
                   x: margin
               });
@@ -242,7 +296,6 @@ app.post('/convert-pdf', upload.array('images'), async (req, res) => {
                      align: 'right',
                      width: pageWidth - (margin * 2)
                  });
-
           } catch (imgError) {
               console.error('Error processing image:', imgError);
               continue;
@@ -287,7 +340,20 @@ app.post('/convert-doc', upload.array('images'), async (req, res) => {
   let outputPath = null;
 
   try {
-      const { koNumber, orderDate, assignment, confirmationDate } = req.body;
+      const { 
+        koNumber, 
+        orderDate, 
+        assignment, 
+        confirmationDate, 
+        imageRatio,
+        smallImageRatio 
+      } = req.body;
+      
+      const ratio = imageRatio ? parseFloat(imageRatio) : null;
+      const smallRatio = smallImageRatio ? parseFloat(smallImageRatio) : null;
+      const pageWidth = 11906; // ~210mm
+      const contentWidth = 9906; // ~175mm (with margins)
+
       const fileName = `${koNumber} - Lampiran Design ${assignment}`.replace(/[/\\?%*:|"<>]/g, '-');
       outputPath = path.join(__dirname, `${fileName}.docx`);
 
@@ -407,35 +473,12 @@ app.post('/convert-doc', upload.array('images'), async (req, res) => {
       for (let pageIndex = 0; pageIndex < sortedFiles.length; pageIndex++) {
           const file = sortedFiles[pageIndex];
           tempFiles.push(file.path);
-
-          const maxWidth = docx.convertMillimetersToTwip(160); // ~160mm max width
-          const maxHeight = docx.convertMillimetersToTwip(200); // ~200mm max height
-          const imgDimensions = sizeOf(file.path);
-          const ratio = imgDimensions.width / imgDimensions.height;
-
-          // Calculate dimensions to fit within page bounds
-          let width = maxWidth;
-          let height = width / ratio;
-
+          const imageBuffer = fs.readFileSync(file.path);
+          const { width, height } = calculateImageDimensions(imageBuffer, contentWidth, ratio, smallRatio);
+          
           try {
-            const { number, caption } = extractNumberAndCaption(file.originalname, pageIndex);
+            const { number, caption } = extractNumberAndCaption(file.metadata.originalName, pageIndex);
             const img = fs.readFileSync(file.path);
-            const imgDimensions = sizeOf(file.path);
-
-            // Calculate available space on page
-            const pageWidth = docx.convertMillimetersToTwip(160); // Available width accounting for margins
-            const pageHeight = docx.convertMillimetersToTwip(220); // Available height accounting for header/footer
-        
-            // Calculate dimensions maintaining aspect ratio
-            const ratio = imgDimensions.width / imgDimensions.height;
-            let finalWidth = pageWidth;
-            let finalHeight = Math.min(finalWidth / ratio, maxHeight);
-
-            // Adjust width if height is constrained
-            if (finalHeight === maxHeight) {
-              finalWidth = maxHeight * ratio;
-            }
-            
             // Add new section for each image
             doc.addSection({
               properties: {
@@ -495,8 +538,8 @@ app.post('/convert-doc', upload.array('images'), async (req, res) => {
                         new docx.ImageRun({
                             data: img,
                             transformation: {
-                                width: finalWidth,
-                                height: finalHeight,
+                                width,
+                                height,
                             },
                         }),
                     ],
@@ -512,8 +555,8 @@ app.post('/convert-doc', upload.array('images'), async (req, res) => {
                         new docx.ImageRun({
                             data: img,
                             transformation: {
-                                width: finalWidth,
-                                height: finalHeight,
+                                width,
+                                height,
                             },
                         }),
                     ],
