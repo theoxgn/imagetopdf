@@ -417,15 +417,7 @@ app.post('/convert-doc', upload.array('images'), async (req, res) => {
           let width = maxWidth;
           let height = width / ratio;
 
-          // If height exceeds max, scale based on height instead
-          // if (height > maxHeight) {
-          //     height = maxHeight;
-          //     width = height * ratio;
-          // }
-
           try {
-
-
             const { number, caption } = extractNumberAndCaption(file.originalname, pageIndex);
             const img = fs.readFileSync(file.path);
             const imgDimensions = sizeOf(file.path);
@@ -433,9 +425,7 @@ app.post('/convert-doc', upload.array('images'), async (req, res) => {
             // Calculate available space on page
             const pageWidth = docx.convertMillimetersToTwip(160); // Available width accounting for margins
             const pageHeight = docx.convertMillimetersToTwip(220); // Available height accounting for header/footer
-            
-            // Calculate dimensions while maintaining aspect ratio
-            
+        
             // Calculate dimensions maintaining aspect ratio
             const ratio = imgDimensions.width / imgDimensions.height;
             let finalWidth = pageWidth;
@@ -445,8 +435,7 @@ app.post('/convert-doc', upload.array('images'), async (req, res) => {
             if (finalHeight === maxHeight) {
               finalWidth = maxHeight * ratio;
             }
-
-
+            
             // Add new section for each image
             doc.addSection({
               properties: {
